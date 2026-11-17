@@ -12,6 +12,15 @@ import { derivPublic } from './deriv/client.js';
 import { getActiveSymbols, getCandles, getPayoutQuote, mapLimit } from './deriv/market.js';
 import { defaultParams, readLog, resetLog, runResearch } from './services/research.js';
 import { AEGIS_ALPHA_DEFAULTS } from './ai/aegis.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import { engine, MAX_WATCH } from './engine/manager.js';
+import { LIMITS } from './engine/symbolEngine.js';
+import { dataDir } from './engine/store.js';
+import { wallet, WALLET_LIMITS } from './engine/wallet.js';
+import { AEGIS_MODEL } from './ai/aegis.js';
+import { FEATURE_NAMES } from './ai/features.js';
+import { COMPAT, getCatalog, scanCatalog, startCatalog } from './assets/catalog.js';
 
 const app = express();
 app.use(express.json());
@@ -109,6 +118,126 @@ app.delete('/api/research/log', (_req, res) => {
   res.json({ ok: true });
 });
 
+// ---- catálogo de ativos compatíveis ------------------------------------------
+
+app.get('/api/assets/catalog', (_req, res) => {
+  res.json({ ...getCatalog(), compat: COMPAT });
+});
+
+app.post('/api/assets/catalog/refresh', (_req, res) => {
+  void scanCatalog();
+  res.json({ ok: true });
+});
+
+// ---- carteira fictícia (R$) ----------------------------------------------------
+
+app.get('/api/wallet', (_req, res) => {
+  res.json({ summary: wallet.summary(), ledger: wallet.ledger(300), equity: wallet.equity(), limits: WALLET_LIMITS });
+});
+
+app.post('/api/wallet/settings', (req, res) => {
+  const b = req.body ?? {};
+  wallet.updateSettings({ stakeMode: b.stakeMode, stakePercent: Number(b.stakePercent), stakeFixed: Number(b.stakeFixed) });
+  res.json({ summary: wallet.summary() });
+});
+
+app.post('/api/wallet/reset', (req, res) => {
+  const initial = Number(req.body?.initial);
+  if (!Number.isFinite(initial)) return res.status(400).json({ error: 'saldo inicial inválido' });
+  wallet.reset(initial);
+  res.json({ summary: wallet.summary() });
+});
+
+// ---- perfil do agente (tela "Aegis IA") ----------------------------------------
+
+const PURPOSE: [RegExp, string][] = [
+  [/^candles-/, 'Histórico de velas (cache local do que foi baixado da Deriv)'],
+  [/^engine-/, 'Sinais, resultados, eventos de aprendizado e seletividade'],
+  [/^wallet/, 'Carteira fictícia em R$ (saldo e extrato)'],
+  [/^watchlist/, 'Ativos que você está monitorando'],
+  [/^research-log/, 'Registro dos estudos do laboratório (correção de múltiplos testes)'],
+];
+
+app.get('/api/ai', (_req, res) => {
+  const files = fs.existsSync(dataDir)
+    ? fs
+        .readdirSync(dataDir)
+        .filter((f) => f.endsWith('.json'))
+        .map((f) => {
+          const st = fs.statSync(path.join(dataDir, f));
+          return {
+            file: f,
+            bytes: st.size,
+            updatedAt: Math.floor(st.mtimeMs / 1000),
+            purpose: PURPOSE.find(([re]) => re.test(f))?.[1] ?? 'Dados do sistema',
+          };
+        })
+        .sort((a, b) => a.file.localeCompare(b.file))
+    : [];
+  res.json({ model: AEGIS_MODEL, features: FEATURE_NAMES, limits: LIMITS, compat: COMPAT, maxWatch: MAX_WATCH, storage: files, dataDir: 'server/data' });
+});
+
+// ---- motor de sinais -------------------------------------------------------
+
+app.get('/api/watchlist', (_req, res) => res.json(engine.list()));
+
+app.post('/api/watchlist', async (req, res) => {
+  const b = req.body ?? {};
+  const symbol = String(b.symbol ?? '');
+  if (!/^\w{2,30}$/.test(symbol)) return res.status(400).json({ error: 'símbolo inválido' });
+  const granularity = num(b.granularity, 300, 60, 900);
+  const durationMin = num(b.durationMin, 15, 1, 240);
+  const quote = await getPayoutQuote(derivPublic, symbol, durationMin);
+  if (!quote) {
+    return res.status(400).json({ error: `A Deriv não oferece ${durationMin} min para este ativo agora` });
+  }
+  try {
+    engine.add({
+      symbol,
+      name: await engine.symbolName(symbol),
+      granularity,
+      durationMin,
+      baseThreshold: AEGIS_ALPHA_DEFAULTS.threshold,
+    });
+  } catch (e) {
+    return res.status(400).json({ error: (e as Error).message });
+  }
+  res.json(engine.list());
+});
+
+app.delete('/api/watchlist/:symbol', (req, res) => {
+  try {
+    engine.remove(req.params.symbol);
+  } catch (e) {
+    return res.status(400).json({ error: (e as Error).message });
+  }
+  res.json(engine.list());
+});
+
+app.get('/api/engine/:symbol', (req, res) => {
+  const e = engine.get(req.params.symbol);
+  if (!e) return res.status(404).json({ error: 'ativo não monitorado' });
+  res.json(e.snapshot());
+});
+
+/** Server-Sent Events: ticks da vela em formação e avisos de novos sinais/resultados. */
+app.get('/api/stream', (req, res) => {
+  res.set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+  });
+  res.flushHeaders();
+  res.write('retry: 3000\n\n');
+  const send = (e: unknown) => res.write(`data: ${JSON.stringify(e)}\n\n`);
+  engine.on('event', send);
+  const ping = setInterval(() => res.write(': ping\n\n'), 25_000);
+  req.on('close', () => {
+    clearInterval(ping);
+    engine.off('event', send);
+  });
+});
+
 // handler de erros (Express 5 encaminha rejeições async para cá)
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);
@@ -117,4 +246,6 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 
 app.listen(config.port, () => {
   console.log(`AegisAI API em http://localhost:${config.port}  (modo leitura pública, sem ordens)`);
+  engine.boot().catch((e) => console.error('falha ao iniciar o motor', e));
+  setTimeout(startCatalog, 4000); // varredura de compatíveis em segundo plano
 });

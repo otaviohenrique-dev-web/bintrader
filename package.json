@@ -2,15 +2,20 @@
   "name": "bintrader",
   "private": true,
   "version": "0.1.0",
-  "description": "AegisAI Alpha — laboratório de pesquisa para opções binárias (Deriv, conta demo)",
-  "workspaces": ["server", "web"],
+  "description": "OrderFlow Lab · Aegis IA 1.1 Alpha: sinais com matemática honesta (Deriv, somente leitura, banca fictícia)",
+  "workspaces": [
+    "server",
+    "web"
+  ],
   "scripts": {
     "dev": "concurrently -n api,web -c cyan,magenta \"npm run dev -w server\" \"npm run dev -w web\"",
     "test": "npm run test -w server",
     "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
-    "build": "npm run build -w web"
+    "build": "npm run build -w web",
+    "icons": "node scripts/make-icons.mjs"
   },
   "devDependencies": {
-    "concurrently": "^9.1.0"
+    "concurrently": "^9.1.0",
+    "sharp": "^0.35.5"
   }
 }

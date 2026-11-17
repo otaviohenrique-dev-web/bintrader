@@ -83,8 +83,8 @@ export default function AegisTab() {
             <Stats s={r.real.summary} />
             <EquityChart
               series={[
-                { label: 'Real', data: r.real.summary.equity, color: '#4f9cf9' },
-                { label: 'Placebo (aleatório)', data: r.placebo.summary.equity, color: '#8b98a8' },
+                { label: 'Real', data: r.real.summary.equity, color: '#d6b36a' },
+                { label: 'Placebo (aleatório)', data: r.placebo.summary.equity, color: '#6a7485' },
               ]}
             />
           </div>

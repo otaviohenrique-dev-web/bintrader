@@ -15,8 +15,17 @@ export const AEGIS_ALPHA_DEFAULTS = {
   granularity: 300,
   durationMin: 15,
   threshold: 0.03,
-  trainSize: 1500,
+  trainSize: 2000,
   testSize: 250,
+};
+
+/** Identidade do agente. "1.1" = 2ª geração do modelo; "Alpha" = estágio de maturidade (em testes). */
+export const AEGIS_MODEL = {
+  platform: 'OrderFlow Lab',
+  name: 'Aegis IA',
+  version: '1.1',
+  stage: 'Alpha',
+  algorithm: 'Regressão logística com regularização L2',
 };
 
 export interface WalkForwardOptions {
@@ -39,8 +48,14 @@ export interface WalkForwardResult {
 /**
  * Walk-forward com purga: o treino de cada janela termina `horizon` velas antes
  * do início do teste, para que nenhum rótulo de treino "enxergue" o futuro do teste.
+ *
+ * Implementado como gerador (um `yield` por janela) para poder rodar em lotes
+ * sem travar o servidor — veja walkForwardAsync.
  */
-export function walkForward(candles: Candle[], o: WalkForwardOptions): WalkForwardResult {
+export function* walkForwardGen(
+  candles: Candle[],
+  o: WalkForwardOptions,
+): Generator<void, WalkForwardResult, void> {
   const ds = buildDataset(candles, o.horizon);
   const trades: Trade[] = [];
   let folds = 0;
@@ -90,6 +105,7 @@ export function walkForward(candles: Candle[], o: WalkForwardOptions): WalkForwa
       }
     }
     testStart = testEnd;
+    yield;
   }
 
   return {
@@ -100,4 +116,25 @@ export function walkForward(candles: Candle[], o: WalkForwardOptions): WalkForwa
       ? FEATURE_NAMES.map((f, j) => ({ feature: f, weight: lastModel!.w[j] }))
       : [],
   };
+}
+
+export function walkForward(candles: Candle[], o: WalkForwardOptions): WalkForwardResult {
+  const g = walkForwardGen(candles, o);
+  let r = g.next();
+  while (!r.done) r = g.next();
+  return r.value;
+}
+
+/** Mesma coisa, mas devolve o controle ao event loop entre janelas (servidor segue responsivo). */
+export async function walkForwardAsync(
+  candles: Candle[],
+  o: WalkForwardOptions,
+): Promise<WalkForwardResult> {
+  const g = walkForwardGen(candles, o);
+  let r = g.next();
+  while (!r.done) {
+    await new Promise<void>((res) => setImmediate(res));
+    r = g.next();
+  }
+  return r.value;
 }

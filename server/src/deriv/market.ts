@@ -49,10 +49,12 @@ export async function getCandles(
   symbol: string,
   granularity: number,
   count: number,
+  /** epoch (s) final; omitido = até agora. Usado para baixar histórico mais antigo. */
+  endEpoch?: number,
 ): Promise<Candle[]> {
   const nowSec = Math.floor(Date.now() / 1000);
   const byTime = new Map<number, Candle>();
-  let end: string | number = 'latest';
+  let end: string | number = endEpoch ?? 'latest';
 
   // A Deriv devolve páginas curtas (~400–1000 velas; cortam em fins de semana),
   // então pagina para trás até juntar `count`, com teto de páginas por segurança.
@@ -84,6 +86,57 @@ export async function getCandles(
     .filter((k) => k.time + granularity <= nowSec)
     .sort((a, b) => a.time - b.time)
     .slice(-count);
+}
+
+export interface ContractOffer {
+  expiryType: string; // tick | intraday | daily
+  /** segundos; null quando a duração é em ticks */
+  minSec: number | null;
+  maxSec: number | null;
+}
+
+/** "15m" -> 900, "1h" -> 3600, "1d" -> 86400, "5t" -> null (ticks) */
+export function parseDuration(s: string | undefined): number | null {
+  const m = /^(\d+)([smhd])$/.exec(s ?? '');
+  if (!m) return null;
+  const n = Number(m[1]);
+  return n * { s: 1, m: 60, h: 3600, d: 86400 }[m[2] as 's' | 'm' | 'h' | 'd'];
+}
+
+/** Ofertas de CALL (Rise) do ativo, por tipo de expiração. Funciona mesmo com o mercado fechado. */
+export async function getCallOffers(c: DerivClient, symbol: string): Promise<ContractOffer[]> {
+  try {
+    const r = await c.request({ contracts_for: symbol });
+    return ((r.contracts_for?.available ?? []) as any[])
+      .filter((k) => k.contract_type === 'CALL')
+      .map((k) => ({
+        expiryType: k.expiry_type,
+        minSec: parseDuration(k.min_contract_duration),
+        maxSec: parseDuration(k.max_contract_duration),
+      }));
+  } catch (e) {
+    if (e instanceof DerivError) return [];
+    throw e;
+  }
+}
+
+/** Velas mais recentes, INCLUINDO a vela em formação (última). Uma requisição só. */
+export async function getRecentCandles(
+  c: DerivClient,
+  symbol: string,
+  granularity: number,
+): Promise<Candle[]> {
+  const r = await c.request({
+    ticks_history: symbol,
+    style: 'candles',
+    granularity,
+    count: 300,
+    end: 'latest',
+    adjust_start_time: 1,
+  });
+  return ((r.candles ?? []) as any[])
+    .map((k) => ({ time: k.epoch, open: k.open, high: k.high, low: k.low, close: k.close }))
+    .sort((a, b) => a.time - b.time);
 }
 
 /** Cotação real de payout para um CALL "at-the-money". null = duração não ofertada. */
