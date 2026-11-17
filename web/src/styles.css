@@ -613,3 +613,8 @@ ul.plain li.warn { color: var(--warn); }
   .ps-note { display: none; }
   .ps-end { margin-left: 0; width: 100%; justify-content: flex-end; }
 }
+
+/* link para a Deriv (conta demo) */
+.deriv-link { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 10px; border: 1px solid var(--line-2); color: var(--text-2); font-size: 13px; font-weight: 500; text-decoration: none; white-space: nowrap; transition: color 0.15s, border-color 0.15s; }
+.deriv-link:hover { color: var(--gold); border-color: var(--gold); }
+@media (max-width: 700px) { .deriv-link span { display: none; } .deriv-link { padding: 6px 9px; } }

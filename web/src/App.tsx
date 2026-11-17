@@ -44,6 +44,16 @@ export default function App() {
           ))}
         </nav>
         <div className="topbar-right">
+          <a
+            className="deriv-link"
+            href="https://dtrader.deriv.com/"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Abrir a Deriv Trader em uma nova aba (entre na sua conta demo)"
+          >
+            <Icon name="ext" size={14} />
+            <span>Deriv</span>
+          </a>
           {snap && (
             <button className="wallet-chip" onClick={() => setTab('panel')} title="Banca fictícia (simulação)">
               <span className="wc-l">Banca fictícia</span>
