@@ -15,9 +15,15 @@ import { AEGIS_ALPHA_DEFAULTS } from './ai/aegis.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { engine, MAX_WATCH } from './engine/manager.js';
+import { acquireLock } from './engine/lock.js';
 import { LIMITS } from './engine/symbolEngine.js';
 import { dataDir } from './engine/store.js';
 import { wallet, WALLET_LIMITS } from './engine/wallet.js';
+import { bestWindows, hourStats, rateHour } from './engine/hours.js';
+import { buildPlan, PROFILES, type RiskProfile } from './engine/plan.js';
+import { loadPlanSettings, savePlanSettings } from './engine/planStore.js';
+import { toolboxCatalog, VERSION_K } from './engine/toolkit.js';
+import { fileURLToPath } from 'node:url';
 import { AEGIS_MODEL } from './ai/aegis.js';
 import { FEATURE_NAMES } from './ai/features.js';
 import { COMPAT, getCatalog, scanCatalog, startCatalog } from './assets/catalog.js';
@@ -156,6 +162,10 @@ const PURPOSE: [RegExp, string][] = [
   [/^wallet/, 'Carteira fictícia em R$ (saldo e extrato)'],
   [/^watchlist/, 'Ativos que você está monitorando'],
   [/^research-log/, 'Registro dos estudos do laboratório (correção de múltiplos testes)'],
+  [/^research-/, 'Bancada: hipóteses testadas, cofre, decisões e linha de versões'],
+  [/^backtest-/, 'Validação retroativa guardada (aparece na hora ao ligar)'],
+  [/^thoughts/, 'Linha de raciocínio recente da IA'],
+  [/^plan/, 'Seu plano de entrada: saldo informado, perfil e stops'],
 ];
 
 app.get('/api/ai', (_req, res) => {
@@ -217,7 +227,73 @@ app.delete('/api/watchlist/:symbol', (req, res) => {
 app.get('/api/engine/:symbol', (req, res) => {
   const e = engine.get(req.params.symbol);
   if (!e) return res.status(404).json({ error: 'ativo não monitorado' });
-  res.json(e.snapshot());
+  res.json({ ...e.snapshot(), version: engine.research.version(req.params.symbol) });
+});
+
+// ---- bancada de pesquisa (ferramentas, hipóteses, cofre e versões) ----------------
+
+app.get('/api/toolbox', (_req, res) => res.json({ ...toolboxCatalog(), versionK: VERSION_K }));
+
+app.get('/api/bench/:symbol', (req, res) => {
+  if (!engine.get(req.params.symbol)) return res.status(404).json({ error: 'ativo não monitorado' });
+  res.json(engine.research.summary(req.params.symbol));
+});
+
+app.post('/api/bench/:symbol/run', (req, res) => {
+  if (!engine.get(req.params.symbol)) return res.status(404).json({ error: 'ativo não monitorado' });
+  engine.research.runNow(req.params.symbol);
+  res.json({ ok: true });
+});
+
+// ---- plano de entrada e melhores horários -----------------------------------------
+
+const planQuery = (q: Record<string, unknown>) => {
+  const cur = loadPlanSettings();
+  const num = (v: unknown) => (v === undefined || v === '' ? undefined : Number(v));
+  return {
+    balance: (num(q.balance) ?? 0) >= 1 ? (num(q.balance) as number) : cur.balance,
+    profile: (q.profile === 'conservador' || q.profile === 'moderado' || q.profile === 'agressivo' ? q.profile : cur.profile) as RiskProfile,
+    stopLossPct: Number.isFinite(num(q.stopLoss)) ? (num(q.stopLoss) as number) : cur.stopLossPct,
+    stopGainPct: Number.isFinite(num(q.stopGain)) ? (num(q.stopGain) as number) : cur.stopGainPct,
+  };
+};
+
+app.post('/api/plan/settings', (req, res) => {
+  const b = req.body ?? {};
+  res.json(savePlanSettings({ balance: Number(b.balance), profile: b.profile, stopLossPct: b.stopLossPct === null ? null : Number(b.stopLossPct), stopGainPct: b.stopGainPct === null ? null : Number(b.stopGainPct) }));
+});
+
+app.get('/api/plan/:symbol', (req, res) => {
+  const e = engine.get(req.params.symbol);
+  if (!e?.isReady) return res.status(503).json({ error: 'a IA ainda está preparando este ativo' });
+  const set = planQuery(req.query);
+  const ref = e.referenceStats();
+  const ratio = e.currentPayout ?? 0.8;
+  const hours = hourStats(e.tradesForHours());
+  const tot = hours.reduce((a, h) => ({ n: a.n + h.n, w: a.w + h.wins }), { n: 0, w: 0 });
+  const overall = tot.n ? tot.w / tot.n : ref.winRate;
+  const windows = bestWindows(hours, ref.breakEven, { width: 3, minN: 150, top: 3 }).map((w) => {
+    const ops = Math.max(1, Math.round(w.opsPerWindow));
+    const p = buildPlan({ balance: set.balance, profile: set.profile, payoutRatio: ratio, winRate: w.winRate, ci95: w.ci95, n: ref.n >= 100 && w.significant ? w.n : Math.min(w.n, 99), stopLossPct: set.stopLossPct ?? undefined, stopGainPct: set.stopGainPct ?? undefined, opsBudget: ops });
+    return { ...w, recommendedOps: Math.min(ops, Math.max(2, p.lossesToStop * 2)), sim: p.sim, stake: p.stake };
+  });
+  // dia típico: total de sinais dividido pelos dias em que a IA operou (os stops só fazem sentido no dia inteiro)
+  const tradingDays = Math.max(1, ...hours.map((h) => h.days));
+  const sessionOps = Math.min(150, Math.max(1, Math.round(tot.n / tradingDays)));
+  const plan = buildPlan({ balance: set.balance, profile: set.profile, payoutRatio: ratio, winRate: ref.winRate, ci95: ref.ci95, n: ref.n, stopLossPct: set.stopLossPct ?? undefined, stopGainPct: set.stopGainPct ?? undefined, opsBudget: sessionOps });
+  res.json({
+    symbol: req.params.symbol,
+    name: e.cfg.name,
+    settings: set,
+    profiles: PROFILES,
+    reference: { winRate: ref.winRate, ci95: ref.ci95, n: ref.n, source: ref.source, payoutRatio: ratio, breakEven: ref.breakEven },
+    plan,
+    hours,
+    overall,
+    windows,
+    nowHour: rateHour(hours, new Date().getHours(), overall),
+    tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  });
 });
 
 /** Server-Sent Events: ticks da vela em formação e avisos de novos sinais/resultados. */
@@ -238,14 +314,40 @@ app.get('/api/stream', (req, res) => {
   });
 });
 
+// interface empacotada: com `npm start` tudo roda em uma porta só
+const webDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../web/dist');
+if (fs.existsSync(path.join(webDist, 'index.html'))) {
+  app.use(express.static(webDist));
+  app.use((req, res, next) => (req.method === 'GET' && !req.path.startsWith('/api') ? res.sendFile(path.join(webDist, 'index.html')) : next()));
+}
+
 // handler de erros (Express 5 encaminha rejeições async para cá)
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);
   res.status(502).json({ error: err.message });
 });
 
-app.listen(config.port, () => {
-  console.log(`AegisAI API em http://localhost:${config.port}  (modo leitura pública, sem ordens)`);
+for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(sig, () => {
+    engine.flush();
+    process.exit(0);
+  });
+}
+
+const lock = await acquireLock();
+if (!lock.ok) {
+  console.error(
+    `Já existe outra instância do OrderFlow Lab usando server/data (PID ${lock.holder}). Feche-a antes de iniciar esta. Se for engano, apague server/data/.lock.`,
+  );
+  process.exit(1);
+}
+
+app.listen(config.port, (err?: Error) => {
+  if (err) {
+    console.error(`Não consegui abrir a porta ${config.port}: ${err.message}`);
+    process.exit(1);
+  }
+  console.log(`OrderFlow Lab em http://localhost:${config.port}  (somente leitura, sem ordens)`);
   engine.boot().catch((e) => console.error('falha ao iniciar o motor', e));
   setTimeout(startCatalog, 4000); // varredura de compatíveis em segundo plano
 });

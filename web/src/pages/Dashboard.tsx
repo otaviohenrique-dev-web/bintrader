@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
 import type { Snapshot } from '../api';
 import AgentCard from '../components/AgentCard';
+import PlanStrip from '../components/PlanStrip';
 import PriceChart from '../components/PriceChart';
+import ChartReasoning from '../components/ChartReasoning';
 import SignalCard from '../components/SignalCard';
 import SignalList from '../components/SignalList';
 import WalletCard from '../components/WalletCard';
@@ -29,6 +31,8 @@ export default function Dashboard({
   const openSig = snap.signals.find((s) => s.status === 'open');
 
   return (
+    <>
+    <PlanStrip snap={snap} onNavigate={onNavigate} />
     <div className="layout">
       <div>
         <section className="card chart-card">
@@ -59,6 +63,7 @@ export default function Dashboard({
             horizon={snap.config.horizon}
             digits={digits}
           />
+          <ChartReasoning snap={snap} />
           <div className="chart-legend">
             <span><i className="lg-up" /> Sinal de alta</span>
             <span><i className="lg-down" /> Sinal de baixa</span>
@@ -69,21 +74,23 @@ export default function Dashboard({
           </div>
         </section>
 
-        <section className="card flush">
-          <div className="card-h" style={{ padding: '16px 18px 4px', marginBottom: 0 }}>
-            <h2>Sinais recentes</h2>
-            <button className="btn-ghost" style={{ borderStyle: 'solid' }} onClick={() => onNavigate('history')}>
-              Ver histórico completo
-            </button>
-          </div>
-          <SignalList signals={snap.signals} limit={6} />
-        </section>
+        <div className="bottom-row">
+          <section className="card flush">
+            <div className="card-h" style={{ padding: '16px 18px 4px', marginBottom: 0 }}>
+              <h2>Sinais recentes</h2>
+              <button className="btn-ghost" style={{ borderStyle: 'solid' }} onClick={() => onNavigate('history')}>
+                Ver histórico completo
+              </button>
+            </div>
+            <SignalList signals={snap.signals} limit={6} />
+          </section>
+          <WalletCard w={snap.wallet} onChanged={onReload} />
+        </div>
       </div>
 
       <div className="col">
         <AgentCard snap={snap} onNavigate={onNavigate} />
         <SignalCard snap={snap} flash={flash} />
-        <WalletCard w={snap.wallet} onChanged={onReload} />
         <WinrateCard snap={snap} />
         <p className="caption" style={{ margin: '0 4px' }}>
           Payout {snap.payoutRatio ? num(snap.payoutRatio * 100, 1) + '%' : '—'} · empate em {num(snap.breakEven * 100, 1)}%.
@@ -91,5 +98,6 @@ export default function Dashboard({
         </p>
       </div>
     </div>
+    </>
   );
 }

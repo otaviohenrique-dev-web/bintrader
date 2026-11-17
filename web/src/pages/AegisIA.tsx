@@ -1,16 +1,23 @@
 import { useEffect, useState } from 'react';
 import { api, type AiInfo, type PaceStats, type Snapshot } from '../api';
+import BenchTab from '../components/BenchTab';
+import ContribBars from '../components/ContribBars';
 import Icon from '../components/Icon';
+import ThoughtStream from '../components/ThoughtStream';
+import Lab from './Lab';
 import { AgentMark } from '../components/Logo';
-import { useNow } from '../hooks/hooks';
+import { useLocalState, useNow } from '../hooks/hooks';
 import { ago, bytes, dayMonth, dayTime, int, pct } from '../lib/format';
 
 const SUB = [
   { id: 'overview', label: 'Visão geral' },
+  { id: 'reasoning', label: 'Raciocínio ao vivo' },
+  { id: 'bench', label: 'Bancada' },
   { id: 'how', label: 'Como decide' },
   { id: 'learn', label: 'Como aprende' },
   { id: 'memory', label: 'Memória e limites' },
   { id: 'swot', label: 'Forças e fraquezas' },
+  { id: 'lab', label: 'Laboratório' },
 ] as const;
 type Sub = (typeof SUB)[number]['id'];
 
@@ -50,7 +57,8 @@ function Strength({ tone, title, children }: { tone: 'good' | 'bad'; title: stri
 }
 
 export default function AegisIA({ snap }: { snap: Snapshot }) {
-  const [sub, setSub] = useState<Sub>('overview');
+  const [storedSub, setSub] = useLocalState<string>('aegis.ai.sub', 'overview');
+  const sub: Sub = SUB.some((x) => x.id === storedSub) ? (storedSub as Sub) : 'overview';
   const [info, setInfo] = useState<AiInfo | null>(null);
   const now = useNow(30_000);
   const L = snap.learning;
@@ -71,7 +79,7 @@ export default function AegisIA({ snap }: { snap: Snapshot }) {
         <div className="hero-mark"><AgentMark size={84} /></div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="eyebrow">Agente do OrderFlow Lab</div>
-          <h1 className="hero-name">Aegis IA <span className="mono gold">1.1</span> <span className="status-chip gold" style={{ verticalAlign: 'middle' }}><i />Alpha</span></h1>
+          <h1 className="hero-name">Aegis IA <span className="mono gold">{snap.version.label}</span> <span className="status-chip gold" style={{ verticalAlign: 'middle' }}><i />Alpha</span> <span className="status-chip" style={{ verticalAlign: 'middle' }}>build {int(snap.builds)}</span></h1>
           <p className="hero-sub">O agente que lê o mercado, sinaliza o próximo movimento e presta contas de cada acerto e cada erro.</p>
         </div>
       </section>
@@ -131,6 +139,40 @@ export default function AegisIA({ snap }: { snap: Snapshot }) {
           </section>
         </>
       )}
+
+      {sub === 'reasoning' && (
+        <div className="two">
+          <section className="card">
+            <div className="card-h">
+              <h2>Linha de raciocínio</h2>
+              <span className="status-chip up"><i />ao vivo</span>
+            </div>
+            <p className="sub" style={{ marginTop: -6 }}>Tudo o que a Aegis IA lê, pesa, testa e decide aparece aqui, na hora em que acontece.</p>
+            <ThoughtStream items={snap.thoughts} height={560} />
+          </section>
+          <div className="col">
+            <section className="card">
+              <div className="card-h"><h2>Por que esta leitura?</h2></div>
+              <ContribBars explain={snap.explain} limit={9} />
+              <p className="caption">Cada barra é o peso do indicador vezes o valor dele agora. A soma, mais o viés do modelo, vira a probabilidade. É a conta inteira, sem caixa-preta.</p>
+            </section>
+            <section className="card">
+              <div className="card-h"><h2>Ferramentas em uso</h2></div>
+              <div className="rules">
+                <span>Tempo gráfico {snap.toolkit.label.split(' · ')[0]}</span>
+                <span>Expira em {snap.toolkit.durationMin} min</span>
+                {snap.toolkit.groups.map((g) => <span key={g}>{g === 'mom' ? 'Momento' : g === 'trend' ? 'Tendência' : g === 'vol' ? 'Volatilidade' : g === 'cal' ? 'Calendário' : 'Extras'}</span>)}
+              </div>
+              <p className="caption">A bancada testa outras combinações o tempo todo e só troca esta se a nova passar numa prova com dados que ela nunca viu. Veja em <b>Bancada</b>.</p>
+              <button className="btn-link" onClick={() => setSub('bench')}>Abrir a bancada →</button>
+            </section>
+          </div>
+        </div>
+      )}
+
+      {sub === 'bench' && <BenchTab snap={snap} />}
+
+      {sub === 'lab' && <Lab />}
 
       {sub === 'how' && (
         <>
@@ -194,6 +236,19 @@ export default function AegisIA({ snap }: { snap: Snapshot }) {
 
       {sub === 'memory' && (
         <>
+          <section className="card">
+            <div className="card-h"><h2>Se você desligar o computador</h2><span className="status-chip up"><i />progresso preservado</span></div>
+            <div className="prose">
+              <p>Nada se perde. Sinais, resultados, banca, aprendizado, validações, hipóteses da bancada, versões e a linha de raciocínio são gravados em arquivos a cada vela e ao desligar o servidor.</p>
+              <p>Ao ligar de novo, a Aegis IA <b>lê esses arquivos</b>, <b>baixa as velas que faltaram</b>, <b>liquida com o preço real os sinais que venceram enquanto você estava fora</b> e retreina para seguir de onde parou. As gravações são atômicas e têm cópia de segurança (<span className="mono">.bak</span>), então uma queda de energia no meio de uma gravação não corrompe nada. Uma trava também impede que duas cópias do sistema escrevam nos mesmos arquivos.</p>
+            </div>
+            <div className="mini" style={{ marginTop: 12 }}>
+              <div><div className="k">Última atividade gravada</div><div className="v mono">{snap.lastSeen ? ago(snap.lastSeen, now) : '—'}</div></div>
+              <div><div className="k">Última retomada</div><div className="v mono">{snap.resume ? `após ${Math.max(1, Math.round(snap.resume.offlineSec / 60))} min` : 'sem pausa longa'}</div></div>
+              <div><div className="k">Sinais liquidados na retomada</div><div className="v mono">{snap.resume ? snap.resume.settled : 0}</div></div>
+              <div><div className="k">Builds acumuladas</div><div className="v mono">{int(snap.builds)}</div></div>
+            </div>
+          </section>
           <section className="card flush">
             <div className="card-h" style={{ padding: '16px 18px 0' }}><h2>Onde ela guarda as informações</h2><span className="muted mono" style={{ fontSize: 12 }}>{info?.dataDir ?? 'server/data'}/</span></div>
             <p className="sub" style={{ padding: '0 18px' }}>Tudo fica em arquivos locais no seu computador e sobrevive a reinícios. Nada é enviado para fora.</p>

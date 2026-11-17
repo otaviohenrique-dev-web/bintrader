@@ -11,7 +11,7 @@ import AegisIA from './pages/AegisIA';
 import Assets from './pages/Assets';
 import Dashboard from './pages/Dashboard';
 import History from './pages/History';
-import Lab from './pages/Lab';
+import Plan from './pages/Plan';
 
 function Clock() {
   const [t, setT] = useState(() => new Date());
@@ -27,14 +27,14 @@ export default function App() {
   const tab: Tab = TABS.some((t) => t.id === stored) ? stored : 'panel';
   const eng = useEngine();
   const { snap } = eng;
-  const needsSymbol = tab === 'panel' || tab === 'history' || tab === 'ai';
+  const needsSymbol = tab === 'panel' || tab === 'history' || tab === 'ai' || tab === 'plan';
   const MAX_WATCH = 6;
 
   return (
     <div className="app">
       <header className="topbar">
         <Brand />
-        <span className="brand-tag"><i />Aegis IA 1.1 · Alpha · em testes</span>
+        <span className="brand-tag"><i />Aegis IA {snap?.version.label ?? '1.10'} · Alpha · em testes</span>
         <nav className="tabs" aria-label="Seções">
           {TABS.map((t) => (
             <button key={t.id} className={`tab ${tab === t.id ? 'on' : ''}`} onClick={() => setTab(t.id)}>
@@ -79,7 +79,6 @@ export default function App() {
           </div>
         )}
 
-        {tab === 'lab' && <Lab />}
         {tab === 'assets' && <Assets watch={eng.watch} maxWatch={MAX_WATCH} onAdd={eng.addWatch} onRemove={eng.removeWatch} />}
 
         {needsSymbol && !eng.error && (!snap || !snap.ready) && (
@@ -99,12 +98,13 @@ export default function App() {
             {tab === 'panel' && <Dashboard snap={snap} flash={eng.flash} onNavigate={setTab} onReload={() => void eng.reload()} />}
             {tab === 'history' && <History snap={snap} />}
             {tab === 'ai' && <AegisIA snap={snap} />}
+            {tab === 'plan' && <Plan snap={snap} />}
           </>
         )}
       </main>
 
       <footer className="footer">
-        OrderFlow Lab · Aegis IA 1.1 Alpha está em fase de testes. Os sinais são estimativas estatísticas, sem garantia
+        OrderFlow Lab · Aegis IA Alpha está em fase de testes. Os sinais são estimativas estatísticas, sem garantia
         de resultado e sem envio de ordens. A banca é fictícia. Opções binárias têm alto risco de perda total.
       </footer>
 

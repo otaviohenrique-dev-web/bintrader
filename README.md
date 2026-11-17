@@ -1,4 +1,4 @@
-# OrderFlow Lab · Aegis IA 1.1 Alpha
+# OrderFlow Lab · Aegis IA (Alpha)
 
 > **OrderFlow Lab** é a plataforma; **Aegis IA** é o agente. Ele lê o mercado a cada vela, sinaliza no gráfico o próximo movimento provável e mostra, com matemática honesta, **se realmente acerta mais do que o necessário para empatar**. Tem até uma banca fictícia em R$ que sobe e desce com cada sinal.
 
@@ -38,8 +38,10 @@ A IA mantém uma **taxa de acerto** própria, sempre comparada com o ponto de em
 - **Painel**: gráfico de velas profissional com os sinais (seta, confiança, WIN/LOSS e linha do preço de entrada), cartão do agente, sinal atual com contagem regressiva, **banca fictícia em R$** e a taxa de acerto da IA (ao vivo e retroativa).
 - **Histórico**: todos os sinais com resultado em R$, filtros por resultado e direção, evolução da banca.
 - **Aegis IA**: a página do protagonista: quem é, como decide, como aprende, onde guarda a memória, limites, forças e fraquezas, e o ritmo de operação (tempo posicionada, sinais emendados, viés).
+- **Plano**: informe o saldo e a IA recomenda o valor de cada entrada, os stops do dia e as melhores janelas de horário, com a esperança matemática sempre à vista.
 - **Ativos**: só os ativos **compatíveis** com a IA (Rise/Fall de 15 min, velas M5, payout ≥ 65%, histórico suficiente), com nota, payout, ponto de empate e botão para monitorar. Os descartados aparecem com o motivo.
-- **Lab**: estudo walk-forward com placebo, calculadora de matemática e a decisão da plataforma.
+- **Raciocínio ao vivo e Bancada** (dentro de *Aegis IA*): a linha de raciocínio em tempo real, o porquê de cada leitura, e a pesquisa contínua de ferramentas (tempos gráficos, expirações e indicadores) com cofre, critério corrigido e linha de versões.
+- **Laboratório** (dentro de *Aegis IA*): estudo walk-forward com placebo, calculadora de matemática e a decisão da plataforma.
 - Avisos em tempo real (novo sinal, resultado), gráfico atualizado via SSE e layout de app no celular (navegação inferior, áreas seguras do iPhone, instalável na tela inicial).
 
 ### Banca fictícia (R$)
@@ -51,6 +53,7 @@ Começa em R$ 1.000,00 e acompanha o mercado real: cada sinal liquidado **soma**
 - [`docs/01-plataforma.md`](docs/01-plataforma.md): por que Deriv
 - [`docs/02-aegis-ia.md`](docs/02-aegis-ia.md): dossiê completo da IA
 - [`docs/03-identidade-visual.md`](docs/03-identidade-visual.md): marca, cores, fontes e mobile
+- [`docs/04-uso-e-persistencia.md`](docs/04-uso-e-persistencia.md): uso diário, retomada após desligar o PC, backup
 
 ## Como rodar
 
@@ -60,7 +63,7 @@ Requisitos: Node.js 22+ e npm.
 git clone https://github.com/otaviohenrique-dev-web/bintrader.git
 cd bintrader
 npm install
-npm run dev
+npm start        # tudo em http://localhost:3001 (ou npm run dev para desenvolver)
 ```
 
 - Dashboard: <http://localhost:5173>
@@ -125,7 +128,8 @@ Nenhuma chave ou conta é necessária. Copie `.env.example` para `.env` só se q
 - [x] Dashboard premium com sinais no gráfico, taxa de acerto e tela da IA
 - [x] Catálogo de ativos compatíveis, banca fictícia em R$ e página da Aegis IA
 - [x] Identidade visual (OrderFlow Lab), favicon, PWA e layout mobile/macOS
-- [ ] Cofre (holdout) final nunca tocado durante o desenvolvimento
+- [x] Bancada de pesquisa com cofre, versões exponenciais e plano de entrada com melhores horários
+- [x] Persistência reforçada: retomada após desligar, gravação atômica, .bak e instância única
 - [ ] Revisar features de horário (hora do dia domina o modelo atual; pode ser ajuste a uma tendência recente)
 - [ ] Varredura de ativos e horários (janela Londres/NY) com correção de múltiplos testes
 - [ ] Executor em conta **demo** da Deriv, com bloqueio de conta real

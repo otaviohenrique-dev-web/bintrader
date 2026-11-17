@@ -1,4 +1,6 @@
+import type { GroupId } from '../ai/features.js';
 import type { Candle } from '../deriv/market.js';
+import type { Thought } from './thoughts.js';
 
 export interface WatchItem {
   symbol: string;
@@ -6,6 +8,9 @@ export interface WatchItem {
   granularity: number; // s
   durationMin: number;
   baseThreshold: number;
+  /** ferramentas (indicadores) em uso; ausente = conjunto padrão da v1.1 */
+  groups?: GroupId[];
+  setId?: string;
 }
 
 export type SignalStatus = 'open' | 'win' | 'loss' | 'void';
@@ -34,9 +39,11 @@ export interface Signal {
   threshold: number;
   /** valor em R$ (carteira fictícia) reservado na emissão */
   stake?: number;
+  /** as 3 variáveis que mais pesaram na decisão (contribuição ao logit) */
+  why?: { feature: string; c: number }[];
 }
 
-export type EventKind = 'start' | 'retrain' | 'backfill' | 'backtest' | 'threshold' | 'signal' | 'settled';
+export type EventKind = 'start' | 'resume' | 'retrain' | 'backfill' | 'backtest' | 'threshold' | 'signal' | 'settled';
 
 export interface LearnEvent {
   at: number; // epoch s
@@ -51,11 +58,18 @@ export interface PersistState {
   retrains: number;
   adaptAnchor: number;
   createdAt: number;
+  /** quantos treinos (builds) este modelo já teve, somando todas as sessões */
+  builds: number;
+  /** última vez que o motor esteve ligado (epoch s): base da retomada após desligar o PC */
+  lastSeen: number;
+  /** acerto retroativo a cada revalidação: mostra a evolução build a build */
+  validations?: { at: number; build: number; n: number; winRate: number; breakEven: number }[];
 }
 
 export type EngineEvent =
   | { type: 'tick'; symbol: string; candle: Candle }
-  | { type: 'update'; symbol: string; reason: 'candle' | 'signal' | 'settled' | 'learning' | 'status' };
+  | { type: 'thought'; symbol: string; thought: Thought }
+  | { type: 'update'; symbol: string; reason: 'candle' | 'signal' | 'settled' | 'learning' | 'status' | 'research' | 'version' };
 
 export interface PerfStats {
   n: number;

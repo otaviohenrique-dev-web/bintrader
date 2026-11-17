@@ -1,6 +1,6 @@
 import type { Candle } from '../deriv/market.js';
 import { summarize, type Summary, type Trade } from '../backtest/stats.js';
-import { buildDataset, FEATURE_NAMES } from './features.js';
+import { buildDataset, DEFAULT_GROUPS, featureNames, type GroupId } from './features.js';
 import { LogisticModel } from './model.js';
 
 /**
@@ -35,6 +35,8 @@ export interface WalkForwardOptions {
   threshold: number;
   payoutRatio: number;
   alpha?: number;
+  /** ferramentas (grupos de indicadores) ligadas; padrão = conjunto da v1.1 */
+  groups?: GroupId[];
 }
 
 export interface WalkForwardResult {
@@ -56,7 +58,8 @@ export function* walkForwardGen(
   candles: Candle[],
   o: WalkForwardOptions,
 ): Generator<void, WalkForwardResult, void> {
-  const ds = buildDataset(candles, o.horizon);
+  const groups = o.groups ?? DEFAULT_GROUPS;
+  const ds = buildDataset(candles, o.horizon, groups);
   const trades: Trade[] = [];
   let folds = 0;
   let lastModel: LogisticModel | null = null;
@@ -113,7 +116,7 @@ export function* walkForwardGen(
     trades,
     folds,
     weights: lastModel
-      ? FEATURE_NAMES.map((f, j) => ({ feature: f, weight: lastModel!.w[j] }))
+      ? featureNames(groups).map((f, j) => ({ feature: f, weight: lastModel!.w[j] }))
       : [],
   };
 }

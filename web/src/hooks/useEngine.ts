@@ -4,7 +4,7 @@ import { brlSigned, pct, price, sideLabel } from '../lib/format';
 
 export interface Toast {
   id: number;
-  kind: 'signal' | 'win' | 'loss' | 'void';
+  kind: 'signal' | 'win' | 'loss' | 'void' | 'version';
   title: string;
   body: string;
 }
@@ -32,6 +32,7 @@ export function useEngine() {
   const symRef = useRef<string | null>(symbol);
   symRef.current = symbol;
   const toastId = useRef(0);
+  const versionRef = useRef<string | null>(null);
 
   const pushToast = useCallback((t: Omit<Toast, 'id'>) => {
     const id = ++toastId.current;
@@ -67,6 +68,10 @@ export function useEngine() {
       if (symRef.current !== sym) return;
       setSnap(s);
       setError(null);
+      if (versionRef.current && versionRef.current !== s.version.label) {
+        pushToast({ kind: 'version', title: 'Nova versão da Aegis IA', body: `${versionRef.current} → ${s.version.label} · ${s.toolkit.label}` });
+      }
+      versionRef.current = s.version.label;
 
       // avisos: só depois da primeira carga, para não "reabrir" histórico
       const prev = seen.current;
@@ -103,6 +108,7 @@ export function useEngine() {
   // troca de ativo
   useEffect(() => {
     seen.current = null;
+    versionRef.current = null;
     setSnap(null);
     if (symbol) void load();
   }, [symbol, load]);
@@ -122,7 +128,9 @@ export function useEngine() {
     es.onmessage = (m) => {
       const e = JSON.parse(m.data) as StreamEvent;
       if (e.symbol !== symRef.current) return;
-      if (e.type === 'tick') {
+      if (e.type === 'thought') {
+        setSnap((p) => (p && !p.thoughts.some((t) => t.id === e.thought.id) ? { ...p, thoughts: [...p.thoughts, e.thought].slice(-150) } : p));
+      } else if (e.type === 'tick') {
         setSnap((p) => {
           if (!p) return p;
           const c = p.candles.slice();

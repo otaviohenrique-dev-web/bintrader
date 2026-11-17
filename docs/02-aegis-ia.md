@@ -1,4 +1,4 @@
-# 02 — Dossiê da Aegis IA 1.1 Alpha
+# 02 — Dossiê da Aegis IA (Alpha)
 
 > Guia para dominar o agente: o que é, onde vive, como decide, como aprende, onde guarda a memória,
 > quais são os limites, as forças e as fraquezas. Os números abaixo são os do código; a mesma
@@ -63,6 +63,7 @@ Tudo em `server/data/` (ignorado pelo git; nada sai do seu computador):
 | Seletividade | 3 pp (base) a 12 pp (máximo), passo de 1 pp |
 | Sinais guardados | 5.000 por ativo (os mais antigos saem) |
 | Frescor do dado | sem sinal sobre dado com mais de 90 s |
+| Bancada de pesquisa | a cada 6 h, 60 hipóteses, cofre de 30% |
 | Expiração e vela | 15 min · M5 (fixos nesta versão) |
 | Banca fictícia | saldo inicial R$ 100 a R$ 1.000.000; valor por sinal de 0,1% a 5% da banca ou R$ fixo |
 
@@ -99,3 +100,61 @@ A regra permite: 1 posição por ativo e nenhuma pausa obrigatória; ao vencer u
 
 **Como zerar tudo?**
 Pare o servidor e apague `server/data/`. Para só reiniciar a banca, use a engrenagem do cartão "Banca fictícia".
+
+---
+
+## 9. Linha de raciocínio (aba *Aegis IA → Raciocínio ao vivo*)
+
+A cada vela fechada a IA escreve, em português e em tempo real, o que **leu** ("34% de chance de alta"), o que **pesou** ("hora (sin) −0,16 · ret10/ATR −0,14…") e o que **decidiu** ("não entro: dentro de ±3 pp de 50%"). Nada é inventado: cada frase vem de um número do modelo. Como o modelo é uma soma de pesos, a conta inteira aparece em barras: *contribuição = peso × valor do indicador*; a soma mais o viés vira a probabilidade.
+
+Cada sinal guarda as 3 variáveis que mais pesaram. Tudo é salvo em `thoughts.json` e sobrevive a reinícios.
+
+## 10. Bancada de pesquisa e o cofre (aba *Aegis IA → Bancada*)
+
+A IA tem uma **caixa de ferramentas**: 5 tempos gráficos (M1, M5, M15, M30, H1), 3 expirações (15, 30, 60 min) e 5 grupos de indicadores (momento, tendência, volatilidade, calendário e extras: ADX, CCI, Williams %R, Donchian, z-score, sequência). Combinando, são **60 hipóteses**. A cada 6 h (e quando você pedir) ela testa todas, mostrando cada passo na linha de raciocínio.
+
+O risco de uma IA que "escolhe as melhores ferramentas" é se enganar: testando 60 combinações, algumas parecem boas por puro acaso. Por isso:
+
+1. **Cofre**: os 30% de dados mais recentes de cada tempo gráfico ficam reservados (definidos uma vez e nunca mais mudados) e nunca entram na escolha.
+2. **Critério corrigido**: com 60 testes, só vale evidência abaixo de α = 0,05 / 60 ≈ 0,083% (Bonferroni).
+3. **Uma conferência**: a melhor hipótese é medida no cofre uma única vez, contra a configuração atual. A queda entre o resultado da bancada e o do cofre mede quanto da escolha foi sorte.
+4. **Troca com prova**: só vira a configuração em uso (e a versão sobe) se passar no cofre com significância e superar a atual. Senão a IA registra por que manteve.
+
+> Achado real (17/11/2026): no M1 todas as configurações ficaram abaixo de 50%. Isso **não** autoriza inverter o sinal por conta própria; hipóteses novas entram na grade antes de olhar o cofre, e o cofre decide.
+
+## 11. Builds e versões
+
+| | O que é | Quando muda |
+|---|---|---|
+| **Build** | Cada retreino (a cada 12 velas) | Sempre. É manutenção: pesos novos com dados novos. **Não** prova melhora. |
+| **Versão** | Qualidade da configuração | Só quando a bancada promove uma configuração que passa no cofre. |
+
+O número da versão cresce de forma **exponencial** com o ganho de acerto sobre a versão anterior: `v_nova = v_anterior × e^(0,0953 × Δpp)`, ou seja, **+1 ponto percentual de acerto = +10% no número**. Dois ganhos de +1 pp dão 1,10 → 1,21 → 1,33. A versão nunca cai, e a tela mostra a linha de versões com acerto, evolução e motivo. Atualizar a versão a cada treino seria enganoso: treinar toda hora mexe nos pesos por ruído, e o número subiria sem que o modelo melhorasse.
+
+## 12. Plano de entrada, horários e stops (aba *Plano*)
+
+Você informa o **saldo atual**, escolhe o perfil (conservador, moderado, agressivo) e, se quiser, os stops. A IA recomenda:
+
+- **Valor por entrada.** Com vantagem *validada*: ¼ de Kelly sobre o limite inferior do acerto, até o teto do perfil (0,5% / 1% / 2% da banca). Sem vantagem comprovada (hoje): *modo estudo*, metade do teto.
+- **Stop loss e stop gain do dia** em R$ (padrão 3% / 5% / 8% da banca) e quantas derrotas seguidas fecham o dia.
+- **Esperança por entrada** em R$, sempre mostrada. Hoje é negativa, e a tela diz isso.
+- **Dia típico**: simulação de 4.000 dias com o plano, parando no primeiro stop (chance de bater o gain, o loss ou terminar sem bater nenhum).
+- **Mapa de horários** (horário do seu computador): acerto da IA em cada hora, com a hora atual marcada.
+- **Melhores janelas de 3 h**, com quantos sinais a IA costuma dar, o máximo de entradas recomendado, o valor de cada uma e os stops.
+
+**Cuidado estatístico:** são 24 janelas testadas; diferenças de 1 a 3 pontos percentuais aparecem por acaso. Só trate uma janela como "melhor" se vier marcada como *significativa* (Bonferroni, α = 0,05 / 24). Stops limitam o tamanho da perda; **não mudam o sinal da esperança matemática**.
+
+## 13. Se você desligar o computador
+
+Ver [`04-uso-e-persistencia.md`](04-uso-e-persistencia.md). Resumo: tudo é gravado a cada vela e ao desligar; ao ligar, a IA baixa o que faltou, liquida os sinais que venceram e segue de onde parou. Gravações atômicas, cópia `.bak`, trava de instância única.
+
+## 14. Arquivos de memória (atualização)
+
+| Arquivo | O que guarda |
+|---|---|
+| `backtest-<ativo>-<vela>-<exp>.json` | Validação retroativa (aparece na hora ao ligar) |
+| `research-<ativo>.json` | Hipóteses, cofre, decisões e linha de versões |
+| `thoughts.json` | Linha de raciocínio recente |
+| `plan.json` | Seu saldo informado, perfil e stops |
+| `*.json.bak` | Cópia de segurança da gravação anterior |
+| `.lock` | Trava de instância única |

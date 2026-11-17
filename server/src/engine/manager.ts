@@ -1,10 +1,13 @@
 import { EventEmitter } from 'node:events';
 import { derivPublic } from '../deriv/client.js';
 import { getActiveSymbols } from '../deriv/market.js';
+import { Researcher } from './researcher.js';
 import { LIMITS, SymbolEngine } from './symbolEngine.js';
-import { wallet } from './wallet.js';
 import { readJson, writeJson } from './store.js';
+import { thoughts } from './thoughts.js';
+import type { Toolkit } from './toolkit.js';
 import type { EngineEvent, WatchItem } from './types.js';
+import { wallet } from './wallet.js';
 
 const WATCHLIST_FILE = 'watchlist.json';
 export const MAX_WATCH = LIMITS.maxWatch;
@@ -17,9 +20,20 @@ const DEFAULT_WATCH: WatchItem = {
   baseThreshold: 0.03,
 };
 
-/** Gerencia um motor de sinais por ativo e repassa os eventos para o stream SSE. */
+/** Gerencia um motor de sinais por ativo, a bancada de pesquisa e repassa os eventos para o stream SSE. */
 class EngineManager extends EventEmitter {
   private engines = new Map<string, SymbolEngine>();
+  readonly research: Researcher;
+
+  constructor() {
+    super();
+    this.research = new Researcher({
+      engine: (s) => this.engines.get(s),
+      reconfigure: (s, tk) => this.reconfigure(s, tk),
+      emit: (e) => this.emit('event', e),
+    });
+    thoughts.on('thought', (t) => this.emit('event', { type: 'thought', symbol: t.symbol, thought: t } satisfies EngineEvent));
+  }
 
   async boot() {
     const items = readJson<WatchItem[]>(WATCHLIST_FILE, []);
@@ -40,6 +54,7 @@ class EngineManager extends EventEmitter {
     const eng = new SymbolEngine(item, (e: EngineEvent) => this.emit('event', e));
     this.engines.set(item.symbol, eng);
     eng.start();
+    this.research.watch(item.symbol);
   }
 
   list(): WatchItem[] {
@@ -62,8 +77,22 @@ class EngineManager extends EventEmitter {
     if (!e) return;
     if (this.engines.size === 1) throw new Error('Mantenha ao menos um ativo monitorado');
     e.stop();
+    this.research.unwatch(symbol);
     this.engines.delete(symbol);
     this.persist();
+  }
+
+  /** A bancada promoveu uma configuração (tempo gráfico, expiração, indicadores): troca o motor do ativo. */
+  reconfigure(symbol: string, tk: Toolkit) {
+    const old = this.engines.get(symbol);
+    if (!old) return;
+    old.stop();
+    const item: WatchItem = { ...old.cfg, granularity: tk.granularity, durationMin: tk.durationMin, groups: tk.groups, setId: tk.setId };
+    const eng = new SymbolEngine(item, (e: EngineEvent) => this.emit('event', e));
+    this.engines.set(symbol, eng);
+    eng.start();
+    this.persist();
+    this.emit('event', { type: 'update', symbol, reason: 'version' } satisfies EngineEvent);
   }
 
   async symbolName(symbol: string): Promise<string> {
@@ -72,6 +101,12 @@ class EngineManager extends EventEmitter {
     } catch {
       return symbol;
     }
+  }
+
+  /** Grava tudo que está em memória (usado ao desligar o servidor). */
+  flush() {
+    for (const e of this.engines.values()) e.stop();
+    thoughts.flush();
   }
 
   private persist() {

@@ -46,6 +46,16 @@ export class LogisticModel {
     return this;
   }
 
+  /**
+   * Por que o modelo disse o que disse: cada variável contribui com (peso × valor padronizado)
+   * para o "logit". A soma das contribuições + viés dá a probabilidade. É a linha de raciocínio.
+   */
+  explain(x: number[]) {
+    const z = this.z(x);
+    const items = z.map((v, j) => ({ z: v, weight: this.w[j], contribution: this.w[j] * v }));
+    return { bias: this.b, items, logit: this.b + items.reduce((s, i) => s + i.contribution, 0) };
+  }
+
   predict(x: number[]): number {
     const z = this.z(x);
     let s = this.b;

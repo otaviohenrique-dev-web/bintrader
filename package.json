@@ -12,7 +12,8 @@
     "test": "npm run test -w server",
     "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
     "build": "npm run build -w web",
-    "icons": "node scripts/make-icons.mjs"
+    "icons": "node scripts/make-icons.mjs",
+    "start": "npm run build && npm run start -w server"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",

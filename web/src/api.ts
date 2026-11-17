@@ -225,6 +225,15 @@ export interface Snapshot {
   now: number;
   config: WatchItem & { horizon: number };
   wallet: WalletSummary;
+  toolkit: ToolkitInfo;
+  builds: number;
+  validations: { at: number; build: number; n: number; winRate: number; breakEven: number }[];
+  lastSeen: number;
+  resume: { at: number; offlineSec: number; settled: number } | null;
+  explain: Explain | null;
+  thoughts: Thought[];
+  hourNow: HourRating;
+  version: { number: number; label: string; since: number };
   pace: { live: PaceStats | null; retro: PaceStats | null };
   ready: boolean;
   error: string | null;
@@ -275,8 +284,177 @@ export interface Snapshot {
   events: LearnEvent[];
 }
 
+export interface Thought {
+  id: number;
+  at: number;
+  symbol: string;
+  kind: 'read' | 'weights' | 'decision' | 'tool' | 'test' | 'result' | 'verdict' | 'version' | 'system';
+  text: string;
+}
+
+export interface Explain {
+  time: number;
+  prob: number;
+  bias: number;
+  items: { feature: string; value: number; z: number; weight: number; contribution: number }[];
+}
+
+export interface HourRating {
+  rating: 'forte' | 'neutro' | 'fraco' | 'sem dados';
+  winRate: number | null;
+  n: number;
+  diffPp: number;
+}
+
+export interface ToolkitInfo {
+  granularity: number;
+  durationMin: number;
+  setId: string;
+  groups: string[];
+  label: string;
+}
+
+export interface Experiment {
+  key: string;
+  label: string;
+  granularity: number;
+  durationMin: number;
+  setId: string;
+  n: number;
+  wins: number;
+  winRate: number;
+  ci95: [number, number];
+  breakEven: number;
+  pValue: number;
+  ev: number;
+  marginPp: number;
+  significant: boolean;
+  at: number;
+}
+
+export interface VaultResult {
+  key: string;
+  label: string;
+  n: number;
+  winRate: number;
+  ci95: [number, number];
+  breakEven: number;
+  pValue: number;
+}
+
+export interface CycleSummary {
+  cycle: number;
+  at: number;
+  tests: number;
+  alpha: number;
+  aboveBreakEven: number;
+  significant: number;
+  best: { key: string; label: string; winRate: number; marginPp: number; devN: number } | null;
+  vault: { challenger: VaultResult; champion: VaultResult | null; alpha: number; looks: number } | null;
+  decision: 'promovida' | 'mantida' | 'atual-e-a-melhor' | 'sem-cofre' | 'sem-dados';
+  note: string;
+}
+
+export interface VersionRec {
+  version: number;
+  label: string;
+  at: number;
+  build: number;
+  winRate: number | null;
+  n: number | null;
+  deltaPp: number;
+  toolkit: string;
+  note: string;
+}
+
+export interface Bench {
+  cycles: number;
+  lastCycleAt: number | null;
+  nextCycleAt: number | null;
+  running: boolean;
+  progress: { i: number; k: number; current: string | null };
+  alpha: number;
+  tests: number;
+  vault: { share: number; looks: number; start: Record<string, number> };
+  champion: { key: string; label: string; granularity: number; durationMin: number; setId: string; tf: string };
+  experiments: Experiment[];
+  history: CycleSummary[];
+  versions: VersionRec[];
+}
+
+export interface Toolbox {
+  timeframes: { sec: number; label: string; trainWindow: number; maxHistory: number }[];
+  durations: number[];
+  groups: { id: string; label: string; what: string; tools: string[] }[];
+  sets: { id: string; label: string; groups: string[] }[];
+  experiments: number;
+  versionK: number;
+}
+
+export interface HourStat {
+  hour: number;
+  n: number;
+  wins: number;
+  winRate: number | null;
+  ci95: [number, number];
+  pnl: number;
+  ev: number;
+  days: number;
+  perHour: number;
+}
+
+export interface PlanWindow {
+  start: number;
+  width: number;
+  label: string;
+  n: number;
+  wins: number;
+  winRate: number;
+  ci95: [number, number];
+  ev: number;
+  opsPerWindow: number;
+  pValue: number;
+  significant: boolean;
+  recommendedOps: number;
+  stake: number;
+  sim: { pGain: number; pLoss: number; pNeither: number; avgResult: number; avgOps: number };
+}
+
+export interface PlanData {
+  mode: 'validado' | 'estudo';
+  stake: number;
+  stakePct: number;
+  breakEven: number;
+  evPerTrade: number;
+  kellyFull: number;
+  stopLoss: number;
+  stopGain: number;
+  stopLossPct: number;
+  stopGainPct: number;
+  lossesToStop: number;
+  recommendedOps: number;
+  sim: { pGain: number; pLoss: number; pNeither: number; avgResult: number; avgOps: number };
+  reasons: string[];
+  warnings: string[];
+}
+
+export interface PlanResponse {
+  symbol: string;
+  name: string;
+  settings: { balance: number; profile: 'conservador' | 'moderado' | 'agressivo'; stopLossPct: number | null; stopGainPct: number | null };
+  profiles: Record<string, { cap: number; loss: number }>;
+  reference: { winRate: number; ci95: [number, number]; n: number; source: 'ao vivo' | 'retroativa'; payoutRatio: number; breakEven: number };
+  plan: PlanData;
+  hours: HourStat[];
+  overall: number;
+  windows: PlanWindow[];
+  nowHour: HourRating;
+  tz: string;
+}
+
 export type StreamEvent =
   | { type: 'tick'; symbol: string; candle: Candle }
+  | { type: 'thought'; symbol: string; thought: Thought }
   | { type: 'update'; symbol: string; reason: string };
 
 export const api = {
@@ -306,4 +484,13 @@ export const api = {
     http<{ summary: WalletSummary }>('/api/wallet/settings', json('POST', s)),
   walletReset: (initial: number) => http<{ summary: WalletSummary }>('/api/wallet/reset', json('POST', { initial })),
   ai: () => http<AiInfo>('/api/ai'),
+
+  // bancada e plano
+  toolbox: () => http<Toolbox>('/api/toolbox'),
+  bench: (symbol: string) => http<Bench>(`/api/bench/${symbol}`),
+  benchRun: (symbol: string) => http<{ ok: boolean }>(`/api/bench/${symbol}/run`, { method: 'POST' }),
+  plan: (symbol: string, q: { balance: number; profile: string; stopLoss?: number | null; stopGain?: number | null }) =>
+    http<PlanResponse>(`/api/plan/${symbol}?balance=${q.balance}&profile=${q.profile}${q.stopLoss ? `&stopLoss=${q.stopLoss}` : ''}${q.stopGain ? `&stopGain=${q.stopGain}` : ''}`),
+  planSettings: (b: { balance?: number; profile?: string; stopLossPct?: number | null; stopGainPct?: number | null }) =>
+    http<PlanResponse['settings']>('/api/plan/settings', json('POST', b)),
 };

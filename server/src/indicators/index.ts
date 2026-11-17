@@ -114,3 +114,129 @@ export function stochK(high: number[], low: number[], close: number[], p = 14): 
   }
   return out;
 }
+
+/** Variação percentual em p velas */
+export function roc(close: number[], p: number): number[] {
+  const out = nanArray(close.length);
+  for (let i = p; i < close.length; i++) out[i] = close[i] / close[i - p] - 1;
+  return out;
+}
+
+/** Williams %R (-100 a 0) */
+export function williamsR(high: number[], low: number[], close: number[], p = 14): number[] {
+  const out = nanArray(close.length);
+  for (let i = p - 1; i < close.length; i++) {
+    let hh = -Infinity;
+    let ll = Infinity;
+    for (let j = i - p + 1; j <= i; j++) {
+      hh = Math.max(hh, high[j]);
+      ll = Math.min(ll, low[j]);
+    }
+    out[i] = hh === ll ? -50 : ((hh - close[i]) / (hh - ll)) * -100;
+  }
+  return out;
+}
+
+/** Posição do fechamento dentro do canal de Donchian (0 = mínima, 1 = máxima) */
+export function donchianPos(high: number[], low: number[], close: number[], p = 20): number[] {
+  const out = nanArray(close.length);
+  for (let i = p - 1; i < close.length; i++) {
+    let hh = -Infinity;
+    let ll = Infinity;
+    for (let j = i - p + 1; j <= i; j++) {
+      hh = Math.max(hh, high[j]);
+      ll = Math.min(ll, low[j]);
+    }
+    out[i] = hh === ll ? 0.5 : (close[i] - ll) / (hh - ll);
+  }
+  return out;
+}
+
+/** Z-score do preço contra a média de p velas */
+export function zscore(close: number[], p = 50): number[] {
+  const m = sma(close, p);
+  const out = nanArray(close.length);
+  for (let i = p - 1; i < close.length; i++) {
+    let s = 0;
+    for (let j = i - p + 1; j <= i; j++) s += (close[j] - m[i]) ** 2;
+    const sd = Math.sqrt(s / p);
+    out[i] = sd > 0 ? (close[i] - m[i]) / sd : 0;
+  }
+  return out;
+}
+
+/** Commodity Channel Index */
+export function cci(high: number[], low: number[], close: number[], p = 20): number[] {
+  const tp = close.map((c, i) => (high[i] + low[i] + c) / 3);
+  const m = sma(tp, p);
+  const out = nanArray(close.length);
+  for (let i = p - 1; i < close.length; i++) {
+    let md = 0;
+    for (let j = i - p + 1; j <= i; j++) md += Math.abs(tp[j] - m[i]);
+    md /= p;
+    out[i] = md > 0 ? (tp[i] - m[i]) / (0.015 * md) : 0;
+  }
+  return out;
+}
+
+/** ADX de Wilder (força da tendência, 0–100, sem direção) */
+export function adx(high: number[], low: number[], close: number[], p = 14): number[] {
+  const n = close.length;
+  const out = nanArray(n);
+  if (n <= 2 * p) return out;
+  const tr = nanArray(n);
+  const pdm = nanArray(n);
+  const mdm = nanArray(n);
+  for (let i = 1; i < n; i++) {
+    const up = high[i] - high[i - 1];
+    const dn = low[i - 1] - low[i];
+    pdm[i] = up > dn && up > 0 ? up : 0;
+    mdm[i] = dn > up && dn > 0 ? dn : 0;
+    tr[i] = Math.max(high[i] - low[i], Math.abs(high[i] - close[i - 1]), Math.abs(low[i] - close[i - 1]));
+  }
+  let trS = 0;
+  let pS = 0;
+  let mS = 0;
+  for (let i = 1; i <= p; i++) {
+    trS += tr[i];
+    pS += pdm[i];
+    mS += mdm[i];
+  }
+  const dx = nanArray(n);
+  const dxAt = () => {
+    if (trS === 0) return 0;
+    const pdi = (100 * pS) / trS;
+    const mdi = (100 * mS) / trS;
+    const s = pdi + mdi;
+    return s === 0 ? 0 : (100 * Math.abs(pdi - mdi)) / s;
+  };
+  dx[p] = dxAt();
+  for (let i = p + 1; i < n; i++) {
+    trS = trS - trS / p + tr[i];
+    pS = pS - pS / p + pdm[i];
+    mS = mS - mS / p + mdm[i];
+    dx[i] = dxAt();
+  }
+  let a = 0;
+  for (let i = p; i < 2 * p; i++) a += dx[i];
+  a /= p;
+  out[2 * p - 1] = a;
+  for (let i = 2 * p; i < n; i++) {
+    a = (a * (p - 1) + dx[i]) / p;
+    out[i] = a;
+  }
+  return out;
+}
+
+/** Sequência de velas na mesma direção (+3 = três altas seguidas, -2 = duas baixas) */
+export function streak(close: number[]): number[] {
+  const out = nanArray(close.length);
+  let s = 0;
+  for (let i = 1; i < close.length; i++) {
+    if (close[i] > close[i - 1]) s = s > 0 ? s + 1 : 1;
+    else if (close[i] < close[i - 1]) s = s < 0 ? s - 1 : -1;
+    else s = 0;
+    out[i] = s;
+  }
+  return out;
+}
