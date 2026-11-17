@@ -1,12 +1,13 @@
 import { EventEmitter } from 'node:events';
+import fs from 'node:fs';
 import { derivPublic } from '../deriv/client.js';
 import { getActiveSymbols } from '../deriv/market.js';
 import { Researcher } from './researcher.js';
 import { LIMITS, SymbolEngine } from './symbolEngine.js';
-import { readJson, writeJson } from './store.js';
+import { dataDir, readJson, writeJson } from './store.js';
 import { thoughts } from './thoughts.js';
 import type { Toolkit } from './toolkit.js';
-import type { EngineEvent, WatchItem } from './types.js';
+import type { EngineEvent, Signal, WatchItem } from './types.js';
 import { wallet } from './wallet.js';
 
 const WATCHLIST_FILE = 'watchlist.json';
@@ -63,6 +64,33 @@ class EngineManager extends EventEmitter {
 
   get(symbol: string) {
     return this.engines.get(symbol);
+  }
+
+  /**
+   * Sinais de TODOS os pares, do mais novo para o mais antigo, com o nome do par.
+   * Inclui pares que você parou de monitorar (lidos do disco): o histórico não some quando o ativo sai da lista.
+   */
+  allSignals(perEngine = 500) {
+    const live = [...this.engines.values()].flatMap((e) =>
+      e.signals.slice(-perEngine).map((s) => ({ ...s, name: e.cfg.name, monitored: true })),
+    );
+
+    const names = new Map(wallet.ledger(5000).map((l) => [l.symbol, l.name]));
+    const pretty = (sym: string) => {
+      const m = /^frx([A-Z]{3})([A-Z]{3})$/.exec(sym);
+      return m ? `${m[1]}/${m[2]}` : sym;
+    };
+    const off: ((typeof live)[number])[] = [];
+    if (fs.existsSync(dataDir)) {
+      for (const f of fs.readdirSync(dataDir)) {
+        const m = /^engine-(.+)-(\d+)-(\d+)\.json$/.exec(f);
+        if (!m || this.engines.has(m[1])) continue;
+        const st = readJson<{ signals?: Signal[] }>(f, {});
+        const name = names.get(m[1]) ?? pretty(m[1]);
+        for (const s of (st.signals ?? []).slice(-perEngine)) off.push({ ...s, name, monitored: false });
+      }
+    }
+    return [...live, ...off].sort((a, b) => b.issuedAt - a.issuedAt);
   }
 
   add(item: WatchItem) {

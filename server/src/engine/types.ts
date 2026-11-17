@@ -64,10 +64,31 @@ export interface PersistState {
   lastSeen: number;
   /** acerto retroativo a cada revalidação: mostra a evolução build a build */
   validations?: { at: number; build: number; n: number; winRate: number; breakEven: number }[];
+  /** pré-alertas emitidos e se foram confirmados no fechamento da vela */
+  preAlerts?: PreAlert[];
+}
+
+/** Prévia do próximo sinal, calculada sobre a vela AINDA em formação (pode mudar até o fechamento). */
+export interface Preview {
+  candleTime: number; // abertura da vela em formação
+  closeAt: number; // quando fecha (e o sinal nasce)
+  prob: number;
+  side: 'CALL' | 'PUT' | null;
+  threshold: number;
+  /** um sinal pode abrir no fechamento (não há outro aberto, ou ele vence até lá) */
+  canOpen: boolean;
+  blockedUntil: number | null;
+}
+
+export interface PreAlert {
+  time: number; // vela a que se refere
+  side: 'CALL' | 'PUT';
+  prob: number;
+  outcome?: 'confirmado' | 'invertido' | 'sem sinal';
 }
 
 export type EngineEvent =
-  | { type: 'tick'; symbol: string; candle: Candle }
+  | { type: 'tick'; symbol: string; candle: Candle; preview?: Preview | null }
   | { type: 'thought'; symbol: string; thought: Thought }
   | { type: 'update'; symbol: string; reason: 'candle' | 'signal' | 'settled' | 'learning' | 'status' | 'research' | 'version' };
 

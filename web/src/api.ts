@@ -231,6 +231,8 @@ export interface Snapshot {
   lastSeen: number;
   resume: { at: number; offlineSec: number; settled: number } | null;
   explain: Explain | null;
+  preview: Preview | null;
+  preAlerts: PreAlertStats;
   thoughts: Thought[];
   hourNow: HourRating;
   version: { number: number; label: string; since: number };
@@ -452,8 +454,30 @@ export interface PlanResponse {
   tz: string;
 }
 
+export interface Preview {
+  candleTime: number;
+  closeAt: number;
+  prob: number;
+  side: 'CALL' | 'PUT' | null;
+  threshold: number;
+  canOpen: boolean;
+  blockedUntil: number | null;
+}
+
+export interface PreAlertStats {
+  n: number;
+  confirmed: number;
+  inverted: number;
+  rate: number | null;
+  secondsAhead: number;
+  recent: { time: number; side: 'CALL' | 'PUT'; prob: number; outcome?: 'confirmado' | 'invertido' | 'sem sinal' }[];
+}
+
+/** Sinal com o nome do par, vindo do histórico unificado. */
+export type NamedSignal = Signal & { name: string; /** false = par que você parou de monitorar */ monitored: boolean };
+
 export type StreamEvent =
-  | { type: 'tick'; symbol: string; candle: Candle }
+  | { type: 'tick'; symbol: string; candle: Candle; preview?: Preview | null }
   | { type: 'thought'; symbol: string; thought: Thought }
   | { type: 'update'; symbol: string; reason: string };
 
@@ -475,6 +499,7 @@ export const api = {
   addWatch: (symbol: string) => http<WatchItem[]>('/api/watchlist', json('POST', { symbol })),
   removeWatch: (symbol: string) => http<WatchItem[]>(`/api/watchlist/${symbol}`, { method: 'DELETE' }),
   engine: (symbol: string) => http<Snapshot>(`/api/engine/${symbol}`),
+  signals: () => http<NamedSignal[]>('/api/signals'),
 
   // catálogo, carteira e perfil da IA
   catalog: () => http<CatalogState>('/api/assets/catalog'),

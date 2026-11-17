@@ -5,11 +5,11 @@ import { derivPublic } from '../deriv/client.js';
 import { getCandles, getPayoutQuote, getRecentCandles, type Candle } from '../deriv/market.js';
 import { hourStats, rateHour } from './hours.js';
 import { bandStats, paceStats, perfStats } from './metrics.js';
-import { makeSignal, resolveSignal } from './settle.js';
+import { canOpenAt, makeSignal, preAlertOutcome, previewSide, resolveSignal } from './settle.js';
 import { readJson, writeJson } from './store.js';
 import { thoughts } from './thoughts.js';
 import { maxHistoryFor, testWindowFor, tfLabel, toolkitLabel, trainWindowFor } from './toolkit.js';
-import type { EngineEvent, EventKind, PersistState, Signal, WatchItem } from './types.js';
+import type { EngineEvent, EventKind, PersistState, PreAlert, Preview, Signal, WatchItem } from './types.js';
 import { wallet } from './wallet.js';
 
 // ---- parâmetros do aprendizado ---------------------------------------------
@@ -24,6 +24,7 @@ const FRESH_S = 90; // não emite sinal sobre dado mais velho que isso
 const ADAPT_WINDOW = 40; // sinais liquidados usados para ajustar a seletividade
 const ADAPT_STEP_EVERY = 20;
 const THRESHOLD_MAX = 0.12;
+const PRE_ALERT_S = 90; // quanto antes do fechamento da vela o pré-alerta é emitido
 const PERSIST_EVERY_S = 60;
 
 /** Limites e parâmetros do Aegis IA (valores do tempo gráfico M5), expostos na tela "Aegis IA". */
@@ -120,6 +121,7 @@ export class SymbolEngine {
     reason?: string;
   } | null = null;
   private lastExplain: Explain | null = null;
+  private preview: Preview | null = null;
   private resumeInfo: { at: number; offlineSec: number; settled: number } | null = null;
   private bt: Backtest | null = null;
   private error: string | null = null;
@@ -145,6 +147,7 @@ export class SymbolEngine {
       builds: saved.builds ?? saved.retrains ?? 0,
       lastSeen: saved.lastSeen ?? 0,
       validations: saved.validations ?? [],
+      preAlerts: saved.preAlerts ?? [],
     };
     this.bt = this.loadBacktest();
   }
@@ -256,8 +259,10 @@ export class SymbolEngine {
     let appended = 0;
     for (const k of recent.filter(isClosed)) if (this.upsert(k)) appended++;
     this.forming = recent.filter((k) => !isClosed(k)).at(-1) ?? null;
+    this.preview = this.computePreview(now);
+    this.checkPreAlert(now);
     if (this.forming) {
-      this.emit({ type: 'tick', symbol: this.cfg.symbol, candle: this.forming });
+      this.emit({ type: 'tick', symbol: this.cfg.symbol, candle: this.forming, preview: this.preview });
     }
 
     if (appended > 0) {
@@ -267,6 +272,7 @@ export class SymbolEngine {
       if (this.candlesSinceTrain >= RETRAIN_EVERY) this.retrain('Retreino com as velas mais recentes');
       if (this.candlesSinceBacktest >= BACKTEST_EVERY) void this.runBacktest('Revalidação periódica');
       await this.predictLatest(now);
+      this.resolvePreAlert();
       this.persistCandles();
       this.persistState();
       this.emit({ type: 'update', symbol: this.cfg.symbol, reason: 'candle' });
@@ -276,6 +282,62 @@ export class SymbolEngine {
     }
 
     await this.maybeBackfill();
+  }
+
+  // ---- prévia do próximo sinal e pré-alerta ------------------------------------
+  /**
+   * "Se a vela fechasse agora": roda o modelo sobre a vela em formação. É uma PRÉVIA: o fechamento
+   * pode mudar a leitura. Por isso cada pré-alerta é conferido depois e a taxa de confirmação é medida.
+   */
+  private computePreview(now: number): Preview | null {
+    if (!this.model || !this.forming || !this.ready) return null;
+    const f = latestFeatures([...this.closed.slice(-599), this.forming], this.groups);
+    if (!f) return null;
+    const prob = this.model.predict(f);
+    const closeAt = this.forming.time + this.g;
+    const open = this.st.signals.find((s) => s.status === 'open');
+    return {
+      candleTime: this.forming.time,
+      closeAt,
+      prob,
+      side: previewSide(prob, this.st.threshold),
+      threshold: this.st.threshold,
+      canOpen: canOpenAt(open, closeAt),
+      blockedUntil: open && !canOpenAt(open, closeAt) ? open.expiresAt : null,
+    };
+  }
+
+  /** Emite UM pré-alerta por vela, nos últimos PRE_ALERT_S segundos, se um sinal puder abrir. */
+  private checkPreAlert(now: number) {
+    const p = this.preview;
+    if (!p || !p.side || !p.canOpen) return;
+    const left = p.closeAt - now;
+    if (left > PRE_ALERT_S || left <= 0) return;
+    const list = (this.st.preAlerts ??= []);
+    if (list.some((a) => a.time === p.candleTime)) return;
+    list.push({ time: p.candleTime, side: p.side, prob: p.prob });
+    if (list.length > 200) list.shift();
+    this.think(
+      'decision',
+      `Pré-alerta: se a vela fechasse agora, eu abriria ${p.side === 'CALL' ? 'ALTA' : 'BAIXA'} (${fmt(p.prob * 100, 1)}% de alta). ` +
+        `Confirmo às ${hhmm(p.closeAt)}; deixe a ordem pronta na Deriv. É só uma prévia, o fechamento pode mudar.`,
+    );
+    this.emit({ type: 'update', symbol: this.cfg.symbol, reason: 'signal' });
+  }
+
+  /** Quando a vela fecha: o pré-alerta se confirmou, foi invertido ou deixou de ser sinal? */
+  private resolvePreAlert() {
+    const last = this.closed[this.closed.length - 1];
+    const pre = this.st.preAlerts?.find((a) => a.time === last?.time && !a.outcome);
+    if (!pre) return;
+    pre.outcome = preAlertOutcome(pre.side, this.lastPred?.side ?? null);
+    const txt =
+      pre.outcome === 'confirmado'
+        ? 'confirmado: o fechamento manteve a leitura'
+        : pre.outcome === 'invertido'
+          ? 'INVERTIDO: o fechamento trouxe o lado oposto, ignore o pré-alerta'
+          : 'não virou sinal: a leitura caiu abaixo do limiar no fechamento';
+    this.think('decision', `Pré-alerta ${txt}.`);
   }
 
   // ---- previsão e raciocínio -------------------------------------------------
@@ -613,6 +675,20 @@ export class SymbolEngine {
     return { live, retro };
   }
 
+  private preAlertStats() {
+    const all: PreAlert[] = this.st.preAlerts ?? [];
+    const done = all.filter((a) => a.outcome);
+    const confirmed = done.filter((a) => a.outcome === 'confirmado').length;
+    return {
+      n: done.length,
+      confirmed,
+      inverted: done.filter((a) => a.outcome === 'invertido').length,
+      rate: done.length ? confirmed / done.length : null,
+      secondsAhead: PRE_ALERT_S,
+      recent: all.slice(-8).reverse(),
+    };
+  }
+
   // ---- visão para a API -----------------------------------------------------
   snapshot() {
     const now = Math.floor(Date.now() / 1000);
@@ -678,6 +754,8 @@ export class SymbolEngine {
       breakEven: 1 / (1 + ratio),
       lastPrediction: this.lastPred,
       explain: this.lastExplain,
+      preview: this.preview,
+      preAlerts: this.preAlertStats(),
       thoughts: thoughts.get(this.cfg.symbol, 60),
       hourNow,
       nextCloseAt: this.forming ? this.forming.time + this.g : null,

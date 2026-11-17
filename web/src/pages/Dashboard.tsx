@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { Snapshot } from '../api';
 import AgentCard from '../components/AgentCard';
+import { NextPill } from '../components/NextSignal';
 import PlanStrip from '../components/PlanStrip';
 import PriceChart from '../components/PriceChart';
 import ChartReasoning from '../components/ChartReasoning';
@@ -49,6 +50,7 @@ export default function Dashboard({
               </div>
             </div>
             <div className="chart-tools">
+              <NextPill snap={snap} />
               <button className={`toggle ${showRetro ? 'on' : ''}`} onClick={() => setShowRetro((v) => !v)} aria-pressed={showRetro}>
                 <span className="sw" /> Sinais retroativos
               </button>

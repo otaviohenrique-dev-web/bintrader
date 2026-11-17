@@ -91,3 +91,26 @@ describe('winrate da IA', () => {
     expect(b[2].live).toBeNull();
   });
 });
+
+import { canOpenAt, preAlertOutcome, previewSide } from '../src/engine/settle.js';
+
+describe('pré-alerta do próximo sinal', () => {
+  it('lado da prévia respeita o limiar', () => {
+    expect(previewSide(0.58, 0.03)).toBe('CALL');
+    expect(previewSide(0.42, 0.03)).toBe('PUT');
+    expect(previewSide(0.51, 0.03)).toBeNull();
+    expect(previewSide(0.53, 0.03)).toBe('CALL'); // exatamente no limiar
+  });
+
+  it('só abre se não há sinal aberto ou se ele vence até o fechamento da vela', () => {
+    expect(canOpenAt(undefined, 1000)).toBe(true);
+    expect(canOpenAt({ expiresAt: 1000 }, 1000)).toBe(true); // vence na própria vela: abre emendado
+    expect(canOpenAt({ expiresAt: 1300 }, 1000)).toBe(false);
+  });
+
+  it('classifica o pré-alerta no fechamento', () => {
+    expect(preAlertOutcome('PUT', 'PUT')).toBe('confirmado');
+    expect(preAlertOutcome('PUT', 'CALL')).toBe('invertido');
+    expect(preAlertOutcome('CALL', null)).toBe('sem sinal');
+  });
+});

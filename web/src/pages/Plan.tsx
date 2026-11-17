@@ -146,12 +146,12 @@ export default function Plan({ snap }: { snap: Snapshot }) {
             {data.windows.length === 0 && <div className="empty">Ainda sem dados suficientes por janela.</div>}
             <div className="windows">
               {data.windows.map((w) => (
-                <div className="win" key={w.start}>
-                  <div className="win-h">
+                <div className="wbox" key={w.start}>
+                  <div className="wbox-h">
                     <b className="mono">{w.label}</b>
                     <span className={`pill ${w.significant ? 'good' : 'warn'}`}>{w.significant ? 'significativa' : 'pode ser acaso'}</span>
                   </div>
-                  <div className="win-wr mono">{pct(w.winRate)}</div>
+                  <div className="wbox-wr mono">{pct(w.winRate)}</div>
                   <div className="k">IC {pct(w.ci95[0], 0)}–{pct(w.ci95[1], 0)} · {int(w.n)} operações</div>
                   <ul className="plain" style={{ marginTop: 10 }}>
                     <li>A IA costuma dar ~<b>{w.opsPerWindow.toFixed(0)}</b> sinais nesta janela.</li>

@@ -230,6 +230,11 @@ app.get('/api/engine/:symbol', (req, res) => {
   res.json({ ...e.snapshot(), version: engine.research.version(req.params.symbol) });
 });
 
+/** Histórico unificado: todas as operações, de todos os pares monitorados. */
+app.get('/api/signals', (_req, res) => {
+  res.json(engine.allSignals().slice(0, 1000));
+});
+
 // ---- bancada de pesquisa (ferramentas, hipóteses, cofre e versões) ----------------
 
 app.get('/api/toolbox', (_req, res) => res.json({ ...toolboxCatalog(), versionK: VERSION_K }));

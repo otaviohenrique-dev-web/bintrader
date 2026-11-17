@@ -158,3 +158,17 @@ Ver [`04-uso-e-persistencia.md`](04-uso-e-persistencia.md). Resumo: tudo é grav
 | `plan.json` | Seu saldo informado, perfil e stops |
 | `*.json.bak` | Cópia de segurança da gravação anterior |
 | `.lock` | Trava de instância única |
+
+## 15. Próximo sinal e pré-alerta
+
+O sinal só nasce quando a vela de 5 min **fecha**, e você precisa de alguns segundos para agir na Deriv. Por isso, enquanto a vela ainda se forma, a IA roda o modelo sobre ela como se fechasse agora (a **prévia**) e emite um **pré-alerta** nos últimos **90 s** antes do fechamento:
+
+- A prévia aparece no cartão *Sinal atual → Próximo sinal* e numa pílula no topo do gráfico, com contagem regressiva e o passo a passo para deixar a ordem pronta na Deriv (Ascensão/Queda · par · 15 min · valor).
+- Há **um** pré-alerta por vela, e só se um sinal puder abrir: não há outro aberto, ou o aberto vence até o fechamento (assim um sinal pode emendar no seguinte).
+- **Som opcional:** um bipe quando o pré-alerta dispara (ligue em *Som desligado*; o navegador só libera o áudio depois do seu clique).
+
+**É uma prévia, não uma garantia.** A vela ainda pode mudar até fechar, e o lado pode inverter. Por isso cada pré-alerta é **conferido no fechamento** como *confirmado*, *invertido* ou *não virou sinal*, e a tela mostra a taxa de confirmação medida ao vivo. Até haver 5 conferidos, ela diz que ainda está medindo.
+
+## 16. Histórico com o par
+
+O Histórico agora lista **todas as operações de todos os pares** juntas, com a coluna **Par** e um filtro por par (a banca, o acerto e a curva se ajustam ao filtro). Pares que você parou de monitorar continuam aparecendo (lidos do disco). Uma operação que ficou aberta num par desligado aparece como **PENDENTE**: o resultado só sai se você voltar a monitorar o par, porque o motor dele precisa baixar as velas para liquidar.

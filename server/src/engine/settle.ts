@@ -61,3 +61,25 @@ export function resolveSignal(
   }
   return s;
 }
+
+/** Lado que a leitura indicaria com a probabilidade de alta `prob` e o limiar `thr`. */
+export function previewSide(prob: number, thr: number): 'CALL' | 'PUT' | null {
+  const dev = prob - 0.5;
+  return dev >= thr ? 'CALL' : dev <= -thr ? 'PUT' : null;
+}
+
+/**
+ * Um novo sinal só nasce se não houver outro aberto ou se o aberto vence até o fechamento da vela
+ * (assim um sinal pode abrir na mesma vela em que o anterior é liquidado).
+ */
+export function canOpenAt(open: Pick<Signal, 'expiresAt'> | undefined, closeAt: number): boolean {
+  return !open || open.expiresAt <= closeAt;
+}
+
+export type PreAlertOutcome = 'confirmado' | 'invertido' | 'sem sinal';
+
+/** O que aconteceu com um pré-alerta quando a vela realmente fechou. */
+export function preAlertOutcome(preSide: 'CALL' | 'PUT', finalSide: 'CALL' | 'PUT' | null): PreAlertOutcome {
+  if (finalSide === preSide) return 'confirmado';
+  return finalSide === null ? 'sem sinal' : 'invertido';
+}

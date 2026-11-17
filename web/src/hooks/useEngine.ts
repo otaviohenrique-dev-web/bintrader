@@ -141,7 +141,7 @@ export function useEngine() {
             c[c.length - 1] = { ...last, forming: false };
             c.push(k);
           }
-          return { ...p, candles: c, nextCloseAt: k.time + p.config.granularity };
+          return { ...p, candles: c, nextCloseAt: k.time + p.config.granularity, preview: e.preview ?? p.preview };
         });
       } else {
         clearTimeout(timer);

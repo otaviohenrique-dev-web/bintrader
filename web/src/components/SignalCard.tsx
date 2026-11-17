@@ -2,6 +2,7 @@ import type { Snapshot } from '../api';
 import { useNow } from '../hooks/hooks';
 import { ago, hhmm, mmss, pct, price, sideLabel, signed } from '../lib/format';
 import Icon from './Icon';
+import NextSignal from './NextSignal';
 
 /** Anel de contagem regressiva até a liquidação. */
 function Ring({ frac, label }: { frac: number; label: string }) {
@@ -122,6 +123,8 @@ export default function SignalCard({ snap, flash }: { snap: Snapshot; flash: 'wi
           )}
         </>
       )}
+
+      <NextSignal snap={snap} />
 
       {lastDone && (
         <div className="last-result">
